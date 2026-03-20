@@ -1,0 +1,27 @@
+spring:
+  application:
+    name: sherlock
+  datasource:
+    url: jdbc:postgresql://localhost:5432/sherlock
+    username: sherlock
+    password: sherlock
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: validate
+  liquibase:
+    change-log: classpath:db/changelog/db.changelog-master.yaml
+
+  ai:
+    openai:
+      api-key: "${SHERLOCK_OPENAI_API_KEY:${LLM_TEST_API_KEY:ollama}}"
+      base-url: "${SHERLOCK_OPENAI_BASE_URL:http://localhost:11434}"
+      chat:
+        options:
+          model: "${SHERLOCK_CHAT_MODEL:t-tech/T-lite-it-2.1:q8_0}"
+
+springdoc:
+  api-docs:
+    path: /api-docs
+  swagger-ui:
+    path: /swagger-ui.html

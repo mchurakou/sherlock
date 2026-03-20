@@ -1,0 +1,36 @@
+<div class="chat-view">
+  @if (chat) {
+    <div class="chat-header">
+      <h2>{{ chat.title || 'Untitled' }}</h2>
+    </div>
+    <div class="messages" #messagesContainer>
+      @for (msg of chat.messages; track msg.id) {
+        <div class="message" [class]="'message-' + msg.role.toLowerCase()">
+          <div class="message-role">{{ msg.role }}</div>
+          <div class="message-content">{{ msg.content }}</div>
+          <div class="message-time">{{ msg.createdAt | date:'short' }}</div>
+        </div>
+      }
+      @if (isStreaming) {
+        <div class="message message-assistant streaming">
+          <div class="message-role">ASSISTANT</div>
+          <div class="message-content">{{ streamingContent }}<span class="cursor"></span></div>
+        </div>
+      }
+    </div>
+  } @else {
+    <div class="empty-state">
+      <p>Select a chat or start a new one</p>
+    </div>
+  }
+  <div class="input-area">
+    <input
+      type="text"
+      [(ngModel)]="newMessage"
+      (keyup.enter)="sendMessage()"
+      placeholder="Type a message..."
+      [disabled]="isStreaming"
+    />
+    <button (click)="sendMessage()" [disabled]="isStreaming">Send</button>
+  </div>
+</div>

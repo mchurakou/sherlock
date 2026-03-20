@@ -1,0 +1,17 @@
+<div class="app-layout">
+  <aside class="sidebar">
+    <app-chat-list
+      [chats]="chats"
+      [selectedChatId]="selectedChatId"
+      (chatSelected)="selectChat($event)"
+      (newChat)="startNewChat()"
+    />
+  </aside>
+  <main class="main">
+    <app-chat-view
+      [chat]="selectedChat"
+      [streamingContent]="streamingContent"
+      (messageSent)="onMessageSent($event)"
+    />
+  </main>
+</div>

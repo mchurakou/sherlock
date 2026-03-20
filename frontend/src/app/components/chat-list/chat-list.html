@@ -1,0 +1,15 @@
+<div class="chat-list">
+  <button class="new-chat-btn" (click)="onNewChat()">+ New Chat</button>
+  <div class="chat-items">
+    @for (chat of chats; track chat.id) {
+      <div
+        class="chat-item"
+        [class.selected]="chat.id === selectedChatId"
+        (click)="selectChat(chat.id)"
+      >
+        <div class="chat-title">{{ chat.title || 'Untitled' }}</div>
+        <div class="chat-date">{{ chat.createdAt | date:'short' }}</div>
+      </div>
+    }
+  </div>
+</div>
