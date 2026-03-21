@@ -8,9 +8,10 @@ graph TB
     LLM(["LLM API"])
 
     UI -->|"1. REST"| BE
-    BE -->|"2. load history"| DB
-    DB -->|"3. history"| BE
-    BE <-->|"4. stream SSE"| LLM
-    BE -->|"5. token chunks SSE"| UI
-    BE -->|"6. persist messages"| DB
+    BE <-->|"2. retrieve history"| DB
+    BE <-->|"3. stream SSE"| LLM
+    BE -->|"4. token chunks SSE"| UI
+    BE -->|"5. persist messages"| DB
+
+    linkStyle 1 stroke:#5cb85c,stroke-width:2px
 ```

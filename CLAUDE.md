@@ -1,88 +1,99 @@
 # CLAUDE.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
+This file provides guidance to Claude Code (`claude.ai/code`) when working with code in this repository.
 
 ## Project
 
-Sherlock is a single-page chat assistant application with a Kotlin/Spring Boot backend and an Angular frontend.
-
-The backend exposes a small REST API for chats, streams model output over SSE, and persists conversation history through Spring AI `ChatMemory`. The Angular app is built into Spring Boot static assets and served by the backend in production.
+Sherlock is a Russian-language investigation-themed chat assistant with a Spring Boot backend and an Angular frontend. It uses Spring AI with persistent chat memory plus a small RAG knowledge base. The bundled knowledge base currently comes from `src/main/resources/knowledge/pirates.json` and contains pirate / Treasure Island-style characters.
 
 ## Tech Stack
 
-- **Language**: Kotlin 1.9.25 with Java 17 toolchain
+- **Language**: Kotlin 1.9.25 with JDK 17 toolchain
 - **Framework**: Spring Boot 3.5.12
-- **Persistence**: Spring Data JPA / Hibernate
-- **Database**: PostgreSQL 17 via `docker-compose.yaml`
+- **Database**: PostgreSQL 17 via Docker Compose
 - **Migrations**: Liquibase YAML changelogs in `src/main/resources/db/changelog/`
-- **LLM**: Spring AI 1.1.4 with `spring-ai-starter-model-openai`
-- **Default local model endpoint**: Ollama-compatible API at `http://localhost:11434`
-- **API docs**: springdoc-openapi 2.8.6, Swagger UI at `http://localhost:8080/swagger-ui.html`, OpenAPI JSON at `http://localhost:8080/api-docs`
+- **ORM**: Spring Data JPA / Hibernate
+- **LLM integration**: Spring AI 1.1.4 via `spring-ai-starter-model-openai`
+- **Vector store**: Qdrant via `spring-ai-starter-vector-store-qdrant`
+- **RAG advisor**: `spring-ai-advisors-vector-store` with `QuestionAnswerAdvisor`
+- **API docs**: springdoc OpenAPI, Swagger UI at `http://localhost:8080/swagger-ui.html`
 - **Frontend**: Angular 21 standalone app in `frontend/`
-- **Build**: Gradle 8.14.4 (Kotlin DSL), npm lockfile checked in under `frontend/`
+- **Build**: Gradle 8.14.4, npm lockfile checked in under `frontend/`
+
+## Runtime Defaults
+
+The checked-in `application.yaml` is configured for a local OpenAI-compatible endpoint by default:
+
+- **LLM base URL**: `http://localhost:11434`
+- **Chat model**: `t-tech/T-lite-it-2.1:q8_0`
+- **Embedding model**: `qwen3-embedding`
+- **Qdrant gRPC port**: `6334`
+- **Qdrant collection**: `sherlock-knowledge-local`
+- **Vector size**: `1024`
+
+Override these with environment variables:
+
+- `SHERLOCK_OPENAI_API_KEY`
+- `SHERLOCK_OPENAI_BASE_URL`
+- `SHERLOCK_CHAT_MODEL`
+- `SHERLOCK_EMBEDDING_MODEL`
+- `SHERLOCK_QDRANT_COLLECTION_NAME`
+
+`SHERLOCK_OPENAI_API_KEY` falls back to `LLM_TEST_API_KEY`, then to the literal string `ollama`.
 
 ## Common Commands
 
 ```bash
 docker compose up -d
-ollama pull t-tech/T-lite-it-2.1:q8_0
 ./gradlew bootRun
+./gradlew build
 ./gradlew buildFrontend
-./gradlew buildFronted   # alias kept in Gradle, despite the typo
-./gradlew test
-cd frontend && npm ci
-cd frontend && npm start -- --proxy-config src/proxy.conf.json
+./gradlew buildFronted   # typo-preserving alias kept in build.gradle.kts
+./gradlew test           # command exists; there are currently no checked-in tests
 ```
 
-Notes:
-
-- `buildFrontend` runs `npm run build -- --output-path ../src/main/resources/static`
-- Angular's application builder emits runtime files under `src/main/resources/static/browser/`
-- `processResources` depends on `buildFrontend`, so `./gradlew bootRun` builds the frontend first
-- `./gradlew test` is configured, but there are currently no checked-in backend tests under `src/test/kotlin`
-
-If `SHERLOCK_CHAT_MODEL` is overridden, pull that model before startup:
+Frontend dev server with `/api` proxy to the backend:
 
 ```bash
-ollama pull "$SHERLOCK_CHAT_MODEL"
+cd frontend
+npm ci
+npm start -- --proxy-config src/proxy.conf.json
+```
+
+Reset Qdrant when embedding dimensions or collection schema change:
+
+```bash
+docker compose down
+docker volume rm sherlock_qdrantdata
+docker compose up -d
 ```
 
 ## Architecture
 
-High-level flow:
-
 ```text
-GET/POST chat metadata:
-ChatController -> ChatService -> ChatRepository -> PostgreSQL
+ChatController (/api/chats) -> ChatService -> ChatRepository -> PostgreSQL
+                                   |
+                                   -> ChatClient
+                                      |- MessageChatMemoryAdvisor -> JpaChatMemory -> PostgreSQL
+                                      |- QuestionAnswerAdvisor -> Qdrant
+                                      `- OpenAI-compatible chat model (streaming)
 
-Streaming reply:
-ChatController -> ChatService.streamLlm() -> ChatClient
-                                         -> MessageChatMemoryAdvisor
-                                         -> JpaChatMemory -> ChatRepository -> PostgreSQL
-
-Angular App -> /api/chats -> Spring Boot
-Angular production build -> src/main/resources/static/browser/ -> served by WebConfig
+Angular frontend -> Gradle buildFrontend -> src/main/resources/static/browser/ -> Spring Boot static hosting
 ```
 
-Important detail: message persistence is not done manually in `ChatService`. The streamed chat flow relies on Spring AI chat memory:
-
-- `ChatController` calls `ChatService.streamLlm(chatId, content)`
-- `ChatService` sets `ChatMemory.CONVERSATION_ID` to the chat id and streams `chatClient.prompt().stream().content()`
-- `AiConfig` wires `MessageChatMemoryAdvisor` into the default `ChatClient`
-- `JpaChatMemory` reads prior messages and persists both `UserMessage` and `AssistantMessage`
-
-## Backend packages (`com.example.sherlock`)
+### Backend packages (`com.example.sherlock`)
 
 - `controller/`:
-  - `ChatController` exposes the four chat endpoints
+  - `ChatController` exposes the chat REST API
   - `GlobalExceptionHandler` maps `ChatNotFoundException` to HTTP 404 `ProblemDetail`
   - `SpaController` redirects `/` to `/index.html`
 - `service/`:
-  - `ChatService` handles list/get/create and starts LLM streaming
-  - `ChatNotFoundException` is the only custom service exception
+  - `ChatService` handles chat CRUD reads plus LLM streaming
+  - `ChatNotFoundException` for missing chats
 - `repository/`:
   - `ChatRepository` extends `JpaRepository`
-  - `findByIdWithMessages()` uses a fetch join for chat-memory reads/writes
+  - `findByIdWithMessages()` uses `LEFT JOIN FETCH` for chat-memory access
 - `entity/`:
   - `Chat`
   - `Message`
@@ -93,89 +104,91 @@ Important detail: message persistence is not done manually in `ChatService`. The
   - `ChatDetailResponse`
   - `MessageResponse`
 - `config/`:
-  - `AiConfig` builds the default `ChatClient`, applies the system prompt from `src/main/resources/prompts/system.st`, sets `temperature=0.5`, and attaches `MessageChatMemoryAdvisor`
-  - `JpaChatMemory` stores conversation history in Postgres through JPA entities
-  - `WebConfig` serves Angular assets from `classpath:/static/browser/` and falls back to `index.html` for non-API SPA routes
+  - `AiConfig` builds the shared `ChatClient`
+  - `JpaChatMemory` stores Spring AI chat memory in PostgreSQL
+  - `WebConfig` serves the Angular SPA and falls back to `index.html`
+- `knowledge/`:
+  - `KnowledgeLoader` ingests `knowledge/pirates.json` into Qdrant on startup
 
 ## REST API
 
 | Method | Path | Description |
 |--------|------|-------------|
-| GET | `/api/chats` | List all chats |
-| GET | `/api/chats/{id}` | Get one chat with all messages |
-| POST | `/api/chats` | Create a new empty chat |
-| POST | `/api/chats/{id}/messages` | Add a user message and stream the assistant reply (`text/event-stream`) |
+| GET | `/api/chats` | List chats, newest first |
+| GET | `/api/chats/{id}` | Get a chat with messages |
+| POST | `/api/chats` | Create an empty chat |
+| POST | `/api/chats/{id}/messages` | Send a user message and stream the model response as `text/event-stream` |
 
-Notes:
+### Streaming behavior
 
-- `POST /api/chats` returns `201 Created`
-- `POST /api/chats/{id}/messages` returns raw token chunks as SSE `data:` events
-- Conversation history is loaded and persisted through Spring AI chat memory, not by explicit save calls in `ChatService`
+- `ChatService.streamLlm()` sets `ChatMemory.CONVERSATION_ID` to the chat ID.
+- Conversation persistence is delegated to `MessageChatMemoryAdvisor` and `JpaChatMemory`.
+- The controller returns `Flux<String>` with SSE framing handled by Spring.
+- The frontend consumes the stream manually with `fetch()` + `ReadableStream`, appending each `data:` chunk to `streamingContent`.
 
-## Chat Title Lifecycle
+## Chat Lifecycle
 
-- New chats are created with title `"New chat - dd.MM.yyyy HH:mm"`
-- When the first `UserMessage` is persisted through `JpaChatMemory.add()`, the chat title is replaced with `userMessage.take(50)`
+- New chats are created with title `New chat - dd.MM.yyyy HH:mm`.
+- On the first persisted user message, `JpaChatMemory.add()` replaces the title with the first 50 characters of that message.
+- Chat list ordering is `createdAt DESC`.
+- Message ordering inside a chat is `createdAt ASC` via `@OrderBy("createdAt ASC")`.
+
+## AI / RAG Details
+
+- The default system prompt comes from `src/main/resources/prompts/system.st`.
+- The system prompt explicitly requires Russian responses.
+- The RAG prompt comes from `src/main/resources/prompts/rag-question-answer.st`.
+- `AiConfig` sets default chat temperature to `0.5`.
+- `QuestionAnswerAdvisor` uses:
+  - `similarityThreshold = 0.5`
+  - `topK = 1`
+  - the custom RAG prompt template
+- `KnowledgeLoader`:
+  - casts the configured `VectorStore` to `QdrantVectorStore`
+  - checks the native Qdrant collection point count before loading
+  - skips ingestion if the collection is already non-empty
+  - reads `pirates.json` with `JsonReader`
+  - uses `"name"` and `"description"` as document content fields
+  - keeps metadata except `description` (so `name` and `alignment` remain)
+  - splits documents with `TokenTextSplitter`
 
 ## Database
 
-Schema is managed by Liquibase (`src/main/resources/db/changelog/`).
+Liquibase manages two tables:
 
-Current tables:
+- `chat`
+- `message`
 
-- `chat`: `id BIGINT` identity PK, `title VARCHAR(255)` nullable, `created_at TIMESTAMPTZ NOT NULL DEFAULT now()`
-- `message`: `id BIGINT` identity PK, `chat_id BIGINT NOT NULL` FK to `chat(id)`, `content TEXT NOT NULL`, `role VARCHAR(20) NOT NULL`, `created_at TIMESTAMPTZ NOT NULL DEFAULT now()`
-- Index: `idx_message_chat_id` on `message(chat_id)`
-
-JPA mapping notes:
-
-- `Chat.messages` is `@OneToMany(mappedBy = "chat", cascade = [CascadeType.ALL], orphanRemoval = true)`
-- Messages are ordered by `createdAt ASC`
-- `Message.chat` is `@ManyToOne(fetch = FetchType.LAZY)` via `chat_id`
-- `Message.role` is stored as `EnumType.STRING`
-- `spring.jpa.open-in-view=false`, so lazy-loaded relationships must be accessed inside transactions
-
-`docker-compose.yaml` provides PostgreSQL 17 with database/user/password all set to `sherlock`.
-
-## Local LLM Setup
-
-Default Spring AI settings from `src/main/resources/application.yaml`:
-
-- `spring.ai.openai.api-key`: `${SHERLOCK_OPENAI_API_KEY:${LLM_TEST_API_KEY:ollama}}`
-- `spring.ai.openai.base-url`: `${SHERLOCK_OPENAI_BASE_URL:http://localhost:11434}`
-- `spring.ai.openai.chat.options.model`: `${SHERLOCK_CHAT_MODEL:t-tech/T-lite-it-2.1:q8_0}`
-
-`AiConfig` does not hardcode the model. It only sets the system prompt and `temperature=0.5`. Model selection comes from `application.yaml` / environment variables.
+`message.chat_id` has a foreign key to `chat(id)` plus an index `idx_message_chat_id`.
 
 ## Frontend
 
-The frontend is a standalone Angular app with no router.
+- The frontend is an Angular 21 standalone app, not an Angular Router SPA.
+- `App` is the orchestration component and owns:
+  - `chats`
+  - `selectedChat`
+  - `selectedChatId`
+  - `streamingContent`
+- `ChatList` emits chat selection and "new chat" events.
+- `ChatView` renders messages, input, and auto-scroll behavior while streaming.
+- Creating a "new chat" in the UI is client-side only until the first message is sent. The actual backend chat is created lazily in `onMessageSent()`.
+- `ChatService` uses `HttpClient` for list/get/create and raw `fetch()` for streaming.
 
-Current structure:
+## Static Hosting
 
-- `frontend/src/app/app.ts` is the root component
-- `ChatList` and `ChatView` are standalone child components in `frontend/src/app/components/`
-- `app.config.ts` provides `HttpClient` and zone/global error providers
-- `ChatService` uses:
-  - `HttpClient` for list/get/create
-  - raw `fetch()` + `ReadableStream` parsing for SSE streaming
-
-Current client flow:
-
-1. Load chat summaries with `GET /api/chats`
-2. Select a chat with `GET /api/chats/{id}`
-3. If there is no active chat, create one first with `POST /api/chats`
-4. Send a message with `POST /api/chats/{id}/messages`
-5. Append streamed tokens to `streamingContent`
-6. Re-fetch the full chat on stream completion
-
-The frontend dev server should be run with `frontend/src/proxy.conf.json` so `/api` proxies to `http://localhost:8080`.
+- Gradle task `buildFrontend` runs `npm ci`, then `npm run build -- --output-path ../src/main/resources/static`.
+- With Angular's application builder, built assets land under `src/main/resources/static/browser/`.
+- `WebConfig` serves from `classpath:/static/browser/`.
+- Unknown non-API paths fall back to `static/browser/index.html`.
+- `WebConfig` does **not** intercept:
+  - `/api/**`
+  - `/swagger-ui/**`
+  - `/v3/**`
+  - `/api-docs`
 
 ## Kotlin / Spring Conventions
 
-- JPA entities are mutable `class`es with default values, not `data class`es
-- `allOpen` is configured for `@Entity`, `@MappedSuperclass`, and `@Embeddable`
-- `plugin.spring` handles Spring-managed class openness
-- `ChatMemory.CONVERSATION_ID` must stay aligned with the persisted chat id string
-- `ChatService` is `@Transactional(readOnly = true)` by default, with `createChat()` marked `@Transactional`
-- Use `ChatRepository.findByIdWithMessages()` when chat-memory code needs messages eagerly fetched
+- `plugin.spring` opens Spring-managed classes; `allOpen` additionally opens JPA entities for Hibernate proxies.
+- JPA entities use mutable `class` types with default values, not `data class`.
+- `spring.jpa.open-in-view=false`, so lazy relations must be loaded inside transactional service / repository boundaries.
+- `ChatRepository.findByIdWithMessages()` exists specifically for `JpaChatMemory`, where conversation history must be loaded with messages eagerly.

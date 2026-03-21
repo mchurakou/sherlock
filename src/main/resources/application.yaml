@@ -19,7 +19,16 @@ spring:
       chat:
         options:
           model: "${SHERLOCK_CHAT_MODEL:t-tech/T-lite-it-2.1:q8_0}"
-
+      embedding:
+        options:
+          model: "${SHERLOCK_EMBEDDING_MODEL:qwen3-embedding}"
+    vectorstore:
+      qdrant:
+        host: localhost
+        port: 6334
+        collection-name: "${SHERLOCK_QDRANT_COLLECTION_NAME:sherlock-knowledge-local}"
+        initialize-schema: true
+        vector-size: 1024
 springdoc:
   api-docs:
     path: /api-docs
