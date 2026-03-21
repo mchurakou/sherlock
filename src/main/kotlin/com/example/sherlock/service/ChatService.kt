@@ -2,10 +2,9 @@ package com.example.sherlock.service
 
 import com.example.sherlock.dto.*
 import com.example.sherlock.entity.Chat
-import com.example.sherlock.entity.Message
-import com.example.sherlock.entity.MessageRole
 import com.example.sherlock.repository.ChatRepository
 import org.springframework.ai.chat.client.ChatClient
+import org.springframework.ai.chat.memory.ChatMemory
 import org.springframework.data.domain.Sort
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
@@ -36,30 +35,17 @@ class ChatService(
         return chatRepository.save(Chat(title = title)).toDetail()
     }
 
-    @Transactional
-    fun saveUserMessage(chatId: Long, content: String) {
-        val chat = chatRepository.findById(chatId).orElseThrow { ChatNotFoundException(chatId) }
-        if (chat.messages.isEmpty()) {
-            chat.title = content.take(50)
-        }
-        chat.messages.add(Message(chat = chat, content = content, role = MessageRole.USER))
-        chatRepository.save(chat)
-    }
-
-    @Transactional
-    fun saveAssistantMessage(chatId: Long, content: String) {
-        val chat = chatRepository.findById(chatId).orElseThrow { ChatNotFoundException(chatId) }
-        chat.messages.add(Message(chat = chat, content = content, role = MessageRole.ASSISTANT))
-        chatRepository.save(chat)
-    }
+    fun streamLlm(chatId: Long, userMessage: String): Flux<String> =
+        chatClient.prompt()
+            .user(userMessage)
+            .advisors { it.param(ChatMemory.CONVERSATION_ID, chatId.toString()) }
+            .stream()
+            .content()
 
     companion object {
         private val TITLE_FORMATTER = DateTimeFormatter.ofPattern("dd.MM.yyyy HH:mm")
             .withZone(ZoneId.systemDefault())
     }
-
-    fun streamLlm(userMessage: String): Flux<String> =
-        chatClient.prompt().user(userMessage).stream().content()
 
     private fun Chat.toSummary() = ChatSummaryResponse(
         id = id, title = title, createdAt = createdAt
@@ -70,7 +56,7 @@ class ChatService(
         messages = messages.map { it.toResponse() }
     )
 
-    private fun Message.toResponse() = MessageResponse(
+    private fun com.example.sherlock.entity.Message.toResponse() = MessageResponse(
         id = id, content = content, role = role.name, createdAt = createdAt
     )
 }

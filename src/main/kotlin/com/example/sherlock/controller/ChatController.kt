@@ -8,15 +8,11 @@ import org.springframework.http.HttpStatus
 import org.springframework.http.MediaType
 import org.springframework.web.bind.annotation.*
 import reactor.core.publisher.Flux
-import reactor.core.publisher.Mono
-import reactor.core.scheduler.Schedulers
 
 @RestController
 @RequestMapping("/api/chats")
 @Tag(name = "Chats", description = "Chat management endpoints")
-class ChatController(
-    private val chatService: ChatService
-) {
+class ChatController(private val chatService: ChatService) {
 
     @GetMapping
     @Operation(summary = "List all chats")
@@ -39,14 +35,6 @@ class ChatController(
     fun addMessageStream(
         @PathVariable id: Long,
         @RequestBody request: AddMessageRequest
-    ): Flux<String> {
-        chatService.saveUserMessage(id, request.content)
-        val buffer = StringBuilder()
-        return chatService.streamLlm(request.content)
-            .doOnNext { buffer.append(it) }
-            .concatWith(
-                Mono.fromRunnable<String> { chatService.saveAssistantMessage(id, buffer.toString()) }
-                    .subscribeOn(Schedulers.boundedElastic())
-            )
-    }
+    ): Flux<String> =
+        chatService.streamLlm(id, request.content)
 }
