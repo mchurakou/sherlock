@@ -4,9 +4,11 @@ This file provides guidance to Claude Code (`claude.ai/code`) when working with 
 
 ## Project
 
-Sherlock is a Russian-language investigation chat assistant. The backend is a Spring Boot application that stores chats in PostgreSQL, retrieves character facts from Qdrant through Spring AI RAG, and serves an Angular SPA built from `frontend/`.
+Sherlock is an investigation chat application. The backend is a Spring Boot app that stores chats in PostgreSQL, retrieves knowledge from Qdrant through Spring AI RAG, exposes a local MCP server/client loop for an interrogation tool, and serves an Angular SPA built from `frontend/`.
 
-The knowledge base is currently `src/main/resources/knowledge/pirates.json`, so the app is themed around investigating fictional pirates / villains rather than a generic assistant.
+The assistant behavior is Russian-language because the system and RAG prompts are in Russian. The current SPA chrome is mostly English (`+ New Chat`, `Send`, `Untitled`, `Select a chat or start a new one`), and newly created empty chats get the English placeholder title `New chat - dd.MM.yyyy HH:mm`.
+
+The knowledge base is `src/main/resources/knowledge/pirates.json`, so the product is currently themed around investigating fictional pirates / villains rather than being a generic assistant.
 
 ## Tech Stack
 
@@ -16,24 +18,30 @@ The knowledge base is currently `src/main/resources/knowledge/pirates.json`, so 
 - **LLM provider**: OpenAI-compatible API via `spring-ai-starter-model-openai`
 - **Vector store**: Qdrant via `spring-ai-starter-vector-store-qdrant`
 - **RAG advisor**: `spring-ai-advisors-vector-store`
+- **MCP**:
+  - `spring-ai-starter-mcp-client`
+  - `spring-ai-starter-mcp-server-webmvc`
 - **Database**: PostgreSQL 17
 - **Migrations**: Liquibase YAML changelogs in `src/main/resources/db/changelog/`
 - **API docs**: springdoc OpenAPI, Swagger UI at `http://localhost:8080/swagger-ui.html`
 - **Frontend**: Angular 21 standalone app in `frontend/`
-- **Build**: Gradle 8.14.4 (wrapper), npm 11 for frontend tooling
+- **Build**: Gradle wrapper plus npm 11.6.0 for frontend tooling
 
 ## Runtime Defaults
 
 `src/main/resources/application.yaml` is the source of truth for local defaults:
 
 - PostgreSQL: `jdbc:postgresql://localhost:5432/sherlock`, username/password `sherlock`
+- Qdrant REST/UI port: `6333`
 - Qdrant gRPC port: `6334`
-- Qdrant REST/UI port from Docker Compose: `6333`
 - Default Qdrant collection: `sherlock-knowledge-local`
 - Default chat base URL: `http://localhost:11434`
 - Default chat model: `t-tech/T-lite-it-2.1:q8_0`
 - Default embedding model: `qwen3-embedding`
 - Default Qdrant vector size: `1024`
+- MCP server SSE endpoint: `/mcp/sse`
+- MCP server message endpoint: `/mcp/message`
+- MCP client target: `http://127.0.0.1:${server.port:8080}/mcp/sse`
 
 Relevant environment variables:
 
@@ -44,7 +52,7 @@ Relevant environment variables:
 - `SHERLOCK_QDRANT_COLLECTION_NAME`
 - `LLM_TEST_API_KEY` is used only as a fallback for the API key
 
-There is no dedicated Spring profile for Ollama in the current code. Instead, the default configuration already points to a local OpenAI-compatible endpoint on `localhost:11434`.
+There is no dedicated Spring profile for Ollama in the current code. The default configuration already points to a local OpenAI-compatible endpoint on `localhost:11434`.
 
 ## Common Commands
 
@@ -69,7 +77,7 @@ Notes:
 
 - `processResources` depends on `buildFrontend`, so `bootRun` / `build` rebuild the Angular app and copy it into Spring static resources.
 - Angular production output is written to `src/main/resources/static/`, and with the Angular application builder the browser bundle ends up under `src/main/resources/static/browser/`.
-- The repo currently has no backend test sources and no Angular `*.spec.ts` files, even though Gradle / Angular test tasks exist.
+- The repo currently has no backend test sources under `src/test` and no Angular `*.spec.ts` files, even though Gradle / Angular test tasks exist.
 
 If you change embedding dimensions or switch to an embedding model with a different vector size, clear the Qdrant volume or update `spring.ai.vectorstore.qdrant.vector-size` to match:
 
@@ -82,14 +90,19 @@ docker compose up -d
 ## Architecture
 
 ```text
-Angular SPA (frontend/) -> built into src/main/resources/static/browser/
-                         -> served by Spring MVC resource handler
+Angular SPA (frontend/)
+  -> built into src/main/resources/static/browser/
+  -> served by Spring MVC resource handler
 
-REST API (/api/chats) -> ChatService -> ChatClient
-                                     -> MessageChatMemoryAdvisor -> JpaChatMemory -> PostgreSQL
-                                     -> QuestionAnswerAdvisor -> Qdrant
-                                     -> CriminalScoringTools
-                                     -> OpenAI-compatible chat model
+REST API (/api/chats)
+  -> ChatController
+  -> ChatService
+  -> ChatClient
+     -> MessageChatMemoryAdvisor -> JpaChatMemory -> PostgreSQL
+     -> QuestionAnswerAdvisor -> Qdrant
+     -> CriminalScoringTools
+     -> MCP tool callbacks -> local MCP server -> InterrogationMcpTool
+     -> OpenAI-compatible chat model
 ```
 
 ### Backend packages (`com.example.sherlock`)
@@ -102,7 +115,7 @@ REST API (/api/chats) -> ChatService -> ChatClient
   - `ChatService` handles chat CRUD reads and streaming LLM requests
 - `repository/`
   - `ChatRepository`
-  - `findByIdWithMessages()` uses `LEFT JOIN FETCH` and is mainly used by `JpaChatMemory`
+  - `findByIdWithMessages()` uses `LEFT JOIN FETCH` and is used by `JpaChatMemory`
 - `entity/`
   - `Chat`
   - `Message`
@@ -110,13 +123,14 @@ REST API (/api/chats) -> ChatService -> ChatClient
 - `dto/`
   - request/response DTOs in `ChatDtos.kt`
 - `config/`
-  - `AiConfig` wires prompts, advisors, tool access, and `ChatClient`
+  - `AiConfig` wires prompts, advisors, direct tools, MCP tool callbacks, and `ChatClient`
   - `JpaChatMemory` persists chat history through JPA
   - `WebConfig` serves the SPA and falls back unknown non-API routes to `index.html`
 - `knowledge/`
   - `KnowledgeLoader` ingests `pirates.json` into Qdrant at startup
 - `tools/`
   - `CriminalScoringTools` exposes a Spring AI tool that returns a random 1-100 score
+  - `InterrogationMcpTool` exposes an MCP tool that returns `true` when the suspect name length is even
 
 ## REST API
 
@@ -138,15 +152,17 @@ Behavior details:
 - `createChat()` creates a title like `New chat - dd.MM.yyyy HH:mm`
 - On the first persisted user message, `JpaChatMemory` replaces that placeholder title with `content.take(50)`
 - Missing chats raise `ChatNotFoundException`, returned as HTTP 404
+- The frontend "new chat" action does not persist anything by itself; it only clears selection, and the actual `POST /api/chats` happens on the first send
 
-## AI / RAG Behavior
+## AI / RAG / MCP Behavior
 
 `AiConfig` currently builds `ChatClient` with:
 
 - default temperature `0.5`
 - system prompt from `src/main/resources/prompts/system.st`
 - RAG prompt template from `src/main/resources/prompts/rag-question-answer.st`
-- tool access to `CriminalScoringTools`
+- direct tool access to `CriminalScoringTools`
+- MCP-provided tool callbacks from the configured `ToolCallbackProvider` beans
 - advisors in this order:
   1. `MessageChatMemoryAdvisor`
   2. `QuestionAnswerAdvisor`
@@ -155,18 +171,25 @@ Current prompt behavior matters:
 
 - The system prompt explicitly tells the assistant to answer in Russian.
 - The RAG prompt instructs the model to answer only from retrieved context and avoid phrases like "according to the context".
-- If you change product behavior, update the prompt files as well as any documentation/UI text.
+- If you change product behavior, update the prompt files as well as any documentation/UI text that should stay consistent.
 
 `QuestionAnswerAdvisor` search settings:
 
 - similarity threshold `0.5`
 - `topK = 1`
 
+MCP wiring details:
+
+- The app exposes its own SSE MCP server with `InterrogationMcpTool`.
+- The app also configures an MCP client connection back to `http://127.0.0.1:${server.port:8080}/mcp/sse`.
+- `ChatClient` includes MCP tool callbacks, so the model can invoke the local interrogation tool through the MCP client layer.
+
 ## Knowledge Base
 
 - Source file: `src/main/resources/knowledge/pirates.json`
 - Loaded on application startup by `KnowledgeLoader`
-- Loader checks Qdrant point count first and skips ingestion if the collection is non-empty
+- Loader downcasts the configured `VectorStore` to `QdrantVectorStore` and checks Qdrant point count first
+- Ingestion is skipped if the collection is non-empty
 - Documents are read with `JsonReader`
 - Content is built from `name` and `description`
 - Metadata excludes `description`
@@ -174,12 +197,12 @@ Current prompt behavior matters:
 
 ## Frontend
 
-The frontend is an Angular 21 standalone application. There is no Angular router and no NgModule-based app structure.
+The frontend is an Angular 21 standalone application. There is no Angular router usage in the current app and no NgModule-based app structure.
 
 Key files:
 
 - `frontend/src/app/app.ts` is the root component
-- `frontend/src/app/app.config.ts` provides `HttpClient` and zone settings
+- `frontend/src/app/app.config.ts` provides `HttpClient`, global error listeners, and zone change detection with event coalescing
 - `frontend/src/app/components/chat-list/` renders the sidebar
 - `frontend/src/app/components/chat-view/` renders messages and the composer
 - `frontend/src/app/services/chat.service.ts` owns API calls and streaming
@@ -189,9 +212,10 @@ Frontend behavior details:
 
 - `ChatService.streamAddMessage()` uses `fetch()` rather than Angular `HttpClient` so it can manually parse SSE chunks from `response.body`
 - The root `App` component appends the optimistic user message locally before streaming starts
-- Streamed assistant tokens are stored in `streamingContent`
+- `streamingContent` holds the in-progress assistant text
 - After stream completion, the frontend re-fetches the whole chat and chat list from the backend
 - `ChatView` auto-scrolls during streaming via `AfterViewChecked`
+- The current UI copy is English, not Russian
 
 ## SPA Serving
 
@@ -215,8 +239,9 @@ This means frontend routing changes must stay compatible with the custom resourc
 
 ## Working Notes For Agents
 
-- Keep user-facing product text in Russian unless the task is explicitly changing locale behavior
-- When changing AI behavior, inspect both Kotlin config and prompt templates
-- When changing chat persistence behavior, inspect `ChatService`, `JpaChatMemory`, entities, and Liquibase changelogs together
-- When changing the frontend build or static serving, inspect both Gradle tasks and `WebConfig`
-- Do not assume old documentation is correct; `CLAUDE.md` has already drifted before
+- Do not assume all user-facing text is Russian. The AI prompts and tool descriptions are Russian, but the current frontend copy and placeholder chat title are English.
+- When changing AI behavior, inspect Kotlin config, MCP wiring, and prompt templates together.
+- When changing chat persistence behavior, inspect `ChatService`, `JpaChatMemory`, entities, and Liquibase changelogs together.
+- When changing the frontend build or static serving, inspect both Gradle tasks and `WebConfig`.
+- When changing interrogation behavior, inspect `application.yaml`, `AiConfig`, and `InterrogationMcpTool` together.
+- Do not assume old documentation is correct; this file has drifted before.

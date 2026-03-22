@@ -13,6 +13,35 @@ spring:
     change-log: classpath:db/changelog/db.changelog-master.yaml
 
   ai:
+    mcp:
+      client:
+        name: sherlock-mcp-client
+        version: 1.0.0
+        type: SYNC
+        initialized: false
+        request-timeout: 30s
+        sse:
+          connections:
+            interrogation-server:
+              url: http://127.0.0.1:${server.port:8080}
+              sse-endpoint: /mcp/sse
+      server:
+        name: sherlock-mcp
+        version: 1.0.0
+        protocol: SSE
+        type: SYNC
+        tool-callback-converter: false
+        instructions: "Используйте инструмент InterrogationMcpTool для допроса подозреваемого по имени."
+        capabilities:
+          tool: true
+          resource: false
+          prompt: false
+          completion: false
+        annotation-scanner:
+          enabled: true
+        sse-endpoint: /mcp/sse
+        sse-message-endpoint: /mcp/message
+        keep-alive-interval: 30s
     openai:
       api-key: "${SHERLOCK_OPENAI_API_KEY:${LLM_TEST_API_KEY:ollama}}"
       base-url: "${SHERLOCK_OPENAI_BASE_URL:http://localhost:11434}"
@@ -29,6 +58,7 @@ spring:
         collection-name: "${SHERLOCK_QDRANT_COLLECTION_NAME:sherlock-knowledge-local}"
         initialize-schema: true
         vector-size: 1024
+
 springdoc:
   api-docs:
     path: /api-docs

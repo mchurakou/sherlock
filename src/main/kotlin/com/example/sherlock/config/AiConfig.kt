@@ -8,6 +8,7 @@ import org.springframework.ai.chat.memory.ChatMemory
 import org.springframework.ai.chat.prompt.PromptTemplate
 import org.springframework.ai.chat.prompt.SystemPromptTemplate
 import org.springframework.ai.openai.OpenAiChatOptions
+import org.springframework.ai.tool.ToolCallbackProvider
 import org.springframework.ai.vectorstore.SearchRequest
 import org.springframework.ai.vectorstore.VectorStore
 import org.springframework.beans.factory.annotation.Value
@@ -24,12 +25,18 @@ class AiConfig {
     @Value("classpath:prompts/rag-question-answer.st")
     private lateinit var ragQuestionAnswerPromptResource: Resource
 
-
     @Bean
-    fun chatClient(builder: ChatClient.Builder, chatMemory: ChatMemory, vectorStore: VectorStore, criminalScoringTools: CriminalScoringTools): ChatClient = builder
+    fun chatClient(
+        builder: ChatClient.Builder,
+        chatMemory: ChatMemory,
+        vectorStore: VectorStore,
+        criminalScoringTools: CriminalScoringTools,
+        toolCallbackProviders: List<ToolCallbackProvider>,
+    ): ChatClient = builder
         .defaultOptions(OpenAiChatOptions.builder().temperature(0.5).build())
         .defaultSystem(SystemPromptTemplate(systemPromptResource).render())
         .defaultTools(criminalScoringTools)
+        .defaultToolCallbacks(*toolCallbackProviders.toTypedArray())
         .defaultAdvisors(
             MessageChatMemoryAdvisor.builder(chatMemory).order(0).build(),
             QuestionAnswerAdvisor.builder(vectorStore)
