@@ -3,6 +3,7 @@ package com.example.sherlock.service
 import com.example.sherlock.dto.*
 import com.example.sherlock.entity.Chat
 import com.example.sherlock.repository.ChatRepository
+import io.opentelemetry.api.trace.Tracer
 import org.springframework.ai.chat.client.ChatClient
 import org.springframework.ai.chat.memory.ChatMemory
 import org.springframework.core.io.ByteArrayResource
@@ -19,7 +20,8 @@ import java.util.Base64
 @Transactional(readOnly = true)
 class ChatService(
     private val chatRepository: ChatRepository,
-    private val chatClient: ChatClient
+    private val chatClient: ChatClient,
+    private val tracer: Tracer
 ) {
 
     fun listChats(): List<ChatSummaryResponse> =
@@ -40,6 +42,12 @@ class ChatService(
 
     fun streamLlm(chatId: Long, userMessage: String, imageBase64: String? = null, imageMimeType: String? = null): Flux<String> {
         val imageBytes = imageBase64?.let { Base64.getDecoder().decode(it) }
+        val span = tracer.spanBuilder("user-interaction")
+            .setAttribute("langfuse.session.id", chatId.toString())
+            .setAttribute("langfuse.observation.input", userMessage)
+            .startSpan()
+        val scope = span.makeCurrent()
+        val outputBuffer = StringBuilder()
         return chatClient.prompt()
             .user { spec ->
                 spec.text(userMessage)
@@ -50,6 +58,9 @@ class ChatService(
             .advisors { it.param(ChatMemory.CONVERSATION_ID, chatId.toString()) }
             .stream()
             .content()
+            .doOnNext { token -> outputBuffer.append(token) }
+            .doOnComplete { span.setAttribute("langfuse.observation.output", outputBuffer.toString()) }
+            .doFinally { scope.close(); span.end() }
     }
 
     companion object {

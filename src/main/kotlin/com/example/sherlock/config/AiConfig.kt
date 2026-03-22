@@ -4,6 +4,7 @@ import com.example.sherlock.tools.CriminalScoringTools
 import org.springframework.ai.chat.client.ChatClient
 import org.springframework.ai.chat.client.advisor.MessageChatMemoryAdvisor
 import org.springframework.ai.chat.client.advisor.vectorstore.QuestionAnswerAdvisor
+import org.springframework.ai.chat.client.advisor.SimpleLoggerAdvisor
 import org.springframework.ai.chat.memory.ChatMemory
 import org.springframework.ai.chat.prompt.PromptTemplate
 import org.springframework.ai.chat.prompt.SystemPromptTemplate
@@ -69,6 +70,7 @@ class AiConfig {
                 )
                 .order(2)
                 .build(),
+            SimpleLoggerAdvisor.builder().order(3).build()
         )
         .build()
 }

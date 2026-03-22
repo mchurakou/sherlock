@@ -1,0 +1,20 @@
+<clickhouse>
+    <!-- Macros used by ReplicatedMergeTree table paths -->
+    <macros>
+        <shard>01</shard>
+        <replica>01</replica>
+        <cluster>default</cluster>
+    </macros>
+
+    <!-- Single-node cluster named "default" so ON CLUSTER default works -->
+    <remote_servers>
+        <default>
+            <shard>
+                <replica>
+                    <host>localhost</host>
+                    <port>9000</port>
+                </replica>
+            </shard>
+        </default>
+    </remote_servers>
+</clickhouse>

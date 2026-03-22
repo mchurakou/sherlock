@@ -13,6 +13,10 @@ spring:
     change-log: classpath:db/changelog/db.changelog-master.yaml
 
   ai:
+    chat:
+      observations:
+        log-prompt: true
+        log-completion: true
     mcp:
       client:
         name: sherlock-mcp-client
@@ -62,6 +66,41 @@ spring:
 sherlock:
   vision:
     model: "${SHERLOCK_VISION_MODEL:PetrosStav/gemma3-tools:4b}"
+
+management:
+  tracing:
+    sampling:
+      probability: 1.0
+  observations:
+    annotations:
+      enabled: true
+    enable:
+      "http.server.requests": false
+      "http.client.requests": false
+
+otel:
+  instrumentation:
+    spring-webmvc:
+      enabled: false
+    spring-web:
+      enabled: false
+    spring-webflux:
+      enabled: false
+    jdbc:
+      enabled: false
+  logs:
+    exporter: none
+  metrics:
+    exporter: none
+  exporter:
+    otlp:
+      endpoint: "http://localhost:3000/api/public/otel"
+      headers:
+        Authorization: "Basic ${LANGFUSE_AUTH}"
+
+logging:
+  level:
+    org.springframework.ai.chat.client.advisor.SimpleLoggerAdvisor: DEBUG
 
 springdoc:
   api-docs:

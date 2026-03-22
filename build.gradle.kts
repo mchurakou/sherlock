@@ -23,11 +23,16 @@ extra["springAiVersion"] = "1.1.4"
 dependencyManagement {
 	imports {
 		mavenBom("org.springframework.ai:spring-ai-bom:${property("springAiVersion")}")
+		mavenBom("io.opentelemetry.instrumentation:opentelemetry-instrumentation-bom:2.17.0")
 	}
 }
 
 dependencies {
 	implementation("org.springframework.boot:spring-boot-starter-web")
+	implementation("org.springframework.boot:spring-boot-starter-actuator")
+	implementation("io.opentelemetry.instrumentation:opentelemetry-spring-boot-starter")
+	implementation("io.micrometer:micrometer-tracing-bridge-otel")
+	implementation("io.opentelemetry:opentelemetry-exporter-otlp")
 	implementation("org.springframework.ai:spring-ai-starter-model-openai")
 	implementation("org.springframework.ai:spring-ai-advisors-vector-store")
 	implementation("org.springframework.ai:spring-ai-starter-vector-store-qdrant")
