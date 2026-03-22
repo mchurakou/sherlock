@@ -3,7 +3,9 @@ package com.example.sherlock.dto
 import java.time.Instant
 
 data class AddMessageRequest(
-    val content: String
+    val content: String,
+    val imageBase64: String? = null,
+    val imageMimeType: String? = null
 )
 
 data class ChatSummaryResponse(
@@ -23,5 +25,7 @@ data class MessageResponse(
     val id: Long,
     val content: String,
     val role: String,
-    val createdAt: Instant
+    val createdAt: Instant,
+    val imageData: String? = null,
+    val imageMimeType: String? = null
 )

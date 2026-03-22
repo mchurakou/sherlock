@@ -25,6 +25,21 @@ class AiConfig {
     @Value("classpath:prompts/rag-question-answer.st")
     private lateinit var ragQuestionAnswerPromptResource: Resource
 
+    @Value("classpath:prompts/image-description.st")
+    private lateinit var imageDescriptionPromptResource: Resource
+
+    @Bean
+    fun visionChatClient(
+        builder: ChatClient.Builder,
+        @Value("\${sherlock.vision.model:}") visionModel: String?,
+    ): ChatClient = builder
+        .apply {
+            if (!visionModel.isNullOrBlank()) {
+                defaultOptions(OpenAiChatOptions.builder().model(visionModel).build())
+            }
+        }
+        .build()
+
     @Bean
     fun chatClient(
         builder: ChatClient.Builder,
@@ -32,13 +47,18 @@ class AiConfig {
         vectorStore: VectorStore,
         criminalScoringTools: CriminalScoringTools,
         toolCallbackProviders: List<ToolCallbackProvider>,
+        visionChatClient: ChatClient,
     ): ChatClient = builder
         .defaultOptions(OpenAiChatOptions.builder().temperature(0.5).build())
         .defaultSystem(SystemPromptTemplate(systemPromptResource).render())
         .defaultTools(criminalScoringTools)
         .defaultToolCallbacks(*toolCallbackProviders.toTypedArray())
         .defaultAdvisors(
-            MessageChatMemoryAdvisor.builder(chatMemory).order(0).build(),
+            ImageAdvisor.builder(
+                visionChatClient,
+                SystemPromptTemplate(imageDescriptionPromptResource).render(),
+            ).order(0).build(),
+            MessageChatMemoryAdvisor.builder(chatMemory).order(1).build(),
             QuestionAnswerAdvisor.builder(vectorStore)
                 .promptTemplate(PromptTemplate(ragQuestionAnswerPromptResource))
                 .searchRequest(
@@ -47,7 +67,7 @@ class AiConfig {
                         .topK(1)
                         .build()
                 )
-                .order(1)
+                .order(2)
                 .build(),
         )
         .build()

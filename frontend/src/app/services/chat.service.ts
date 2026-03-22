@@ -1,7 +1,7 @@
 import { Injectable } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { Observable } from 'rxjs';
-import { ChatSummary, ChatDetail } from '../models/chat.model';
+import { ChatSummary, ChatDetail, MessageInput } from '../models/chat.model';
 
 @Injectable({ providedIn: 'root' })
 export class ChatService {
@@ -21,14 +21,14 @@ export class ChatService {
     return this.http.post<ChatDetail>(this.baseUrl, null);
   }
 
-  streamAddMessage(chatId: number, content: string): Observable<string> {
+  streamAddMessage(chatId: number, input: MessageInput): Observable<string> {
     return new Observable(subscriber => {
       const controller = new AbortController();
 
       fetch(`${this.baseUrl}/${chatId}/messages`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ content }),
+        body: JSON.stringify({ content: input.content, imageBase64: input.imageBase64, imageMimeType: input.imageMimeType }),
         signal: controller.signal,
       }).then(async response => {
         const reader = response.body!.getReader();

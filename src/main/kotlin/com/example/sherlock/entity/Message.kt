@@ -22,5 +22,11 @@ class Message(
     var role: MessageRole = MessageRole.USER,
 
     @Column(name = "created_at", nullable = false, updatable = false)
-    var createdAt: Instant = Instant.now()
+    var createdAt: Instant = Instant.now(),
+
+    @Column(name = "image_data", columnDefinition = "text")
+    var imageData: String? = null,
+
+    @Column(name = "image_mime_type", length = 50)
+    var imageMimeType: String? = null
 )

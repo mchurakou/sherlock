@@ -5,12 +5,15 @@ import com.example.sherlock.entity.Chat
 import com.example.sherlock.repository.ChatRepository
 import org.springframework.ai.chat.client.ChatClient
 import org.springframework.ai.chat.memory.ChatMemory
+import org.springframework.core.io.ByteArrayResource
 import org.springframework.data.domain.Sort
 import org.springframework.stereotype.Service
 import org.springframework.transaction.annotation.Transactional
+import org.springframework.util.MimeType
 import reactor.core.publisher.Flux
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
+import java.util.Base64
 
 @Service
 @Transactional(readOnly = true)
@@ -35,12 +38,19 @@ class ChatService(
         return chatRepository.save(Chat(title = title)).toDetail()
     }
 
-    fun streamLlm(chatId: Long, userMessage: String): Flux<String> =
-        chatClient.prompt()
-            .user(userMessage)
+    fun streamLlm(chatId: Long, userMessage: String, imageBase64: String? = null, imageMimeType: String? = null): Flux<String> {
+        val imageBytes = imageBase64?.let { Base64.getDecoder().decode(it) }
+        return chatClient.prompt()
+            .user { spec ->
+                spec.text(userMessage)
+                if (imageBytes != null && imageMimeType != null) {
+                    spec.media(MimeType.valueOf(imageMimeType), ByteArrayResource(imageBytes))
+                }
+            }
             .advisors { it.param(ChatMemory.CONVERSATION_ID, chatId.toString()) }
             .stream()
             .content()
+    }
 
     companion object {
         private val TITLE_FORMATTER = DateTimeFormatter.ofPattern("dd.MM.yyyy HH:mm")
@@ -57,6 +67,7 @@ class ChatService(
     )
 
     private fun com.example.sherlock.entity.Message.toResponse() = MessageResponse(
-        id = id, content = content, role = role.name, createdAt = createdAt
+        id = id, content = content, role = role.name, createdAt = createdAt,
+        imageData = imageData, imageMimeType = imageMimeType
     )
 }

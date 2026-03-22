@@ -7,8 +7,10 @@ import org.springframework.ai.chat.memory.ChatMemory
 import org.springframework.ai.chat.messages.AssistantMessage
 import org.springframework.ai.chat.messages.Message
 import org.springframework.ai.chat.messages.UserMessage
+import org.springframework.core.io.Resource
 import org.springframework.stereotype.Component
 import org.springframework.transaction.annotation.Transactional
+import java.util.Base64
 
 @Component
 class JpaChatMemory(private val chatRepository: ChatRepository) : ChatMemory {
@@ -25,7 +27,19 @@ class JpaChatMemory(private val chatRepository: ChatRepository) : ChatMemory {
                 is AssistantMessage -> MessageRole.ASSISTANT
                 else -> return@forEach
             }
-            chat.messages.add(ChatMessage(chat = chat, content = msg.text!!, role = role))
+            val firstMedia = if (msg is UserMessage) msg.media?.firstOrNull() else null
+            val imageData = firstMedia?.let { media ->
+                runCatching {
+                    when (val d = media.data) {
+                        is Resource -> Base64.getEncoder().encodeToString(d.inputStream.readBytes())
+                        is ByteArray -> Base64.getEncoder().encodeToString(d)
+                        else -> null
+                    }
+                }.getOrNull()
+            }
+            val imageMimeType = firstMedia?.mimeType?.toString()
+            chat.messages.add(ChatMessage(chat = chat, content = msg.text ?: "", role = role,
+                imageData = imageData, imageMimeType = imageMimeType))
         }
         chatRepository.save(chat)
     }

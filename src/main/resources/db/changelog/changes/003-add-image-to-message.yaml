@@ -1,0 +1,14 @@
+databaseChangeLog:
+  - changeSet:
+      id: 003-add-image-to-message
+      author: sherlock
+      changes:
+        - addColumn:
+            tableName: message
+            columns:
+              - column:
+                  name: image_data
+                  type: text
+              - column:
+                  name: image_mime_type
+                  type: varchar(50)

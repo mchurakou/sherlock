@@ -2,7 +2,7 @@ import { Component, NgZone, OnInit } from '@angular/core';
 import { ChatList } from './components/chat-list/chat-list';
 import { ChatView } from './components/chat-view/chat-view';
 import { ChatService } from './services/chat.service';
-import { ChatSummary, ChatDetail } from './models/chat.model';
+import { ChatSummary, ChatDetail, MessageInput } from './models/chat.model';
 
 @Component({
   selector: 'app-root',
@@ -41,31 +41,32 @@ export class App implements OnInit {
     this.selectedChatId = null;
   }
 
-  onMessageSent(content: string) {
+  onMessageSent(input: MessageInput) {
     if (this.selectedChat) {
-      this.streamMessage(this.selectedChat.id, content);
+      this.streamMessage(this.selectedChat.id, input);
     } else {
       this.chatService.createChat().subscribe(chat => {
         this.selectedChatId = chat.id;
         this.selectedChat = chat;
         this.loadChats();
-        this.streamMessage(chat.id, content);
+        this.streamMessage(chat.id, input);
       });
     }
   }
 
-  private streamMessage(chatId: number, content: string) {
+  private streamMessage(chatId: number, input: MessageInput) {
     if (this.selectedChat) {
       this.selectedChat = {
         ...this.selectedChat,
         messages: [...this.selectedChat.messages, {
-          id: -1, content, role: 'USER', createdAt: new Date().toISOString()
+          id: -1, content: input.content, role: 'USER', createdAt: new Date().toISOString(),
+          imageData: input.imageBase64, imageMimeType: input.imageMimeType,
         }],
       };
     }
     this.streamingContent = '';
 
-    this.chatService.streamAddMessage(chatId, content).subscribe({
+    this.chatService.streamAddMessage(chatId, input).subscribe({
       next: token => this.ngZone.run(() => {
         this.streamingContent = (this.streamingContent ?? '') + token;
       }),

@@ -16,4 +16,12 @@ export interface Message {
   content: string;
   role: 'USER' | 'ASSISTANT';
   createdAt: string;
+  imageData?: string;
+  imageMimeType?: string;
+}
+
+export interface MessageInput {
+  content: string;
+  imageBase64?: string;
+  imageMimeType?: string;
 }

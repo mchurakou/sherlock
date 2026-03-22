@@ -36,5 +36,5 @@ class ChatController(private val chatService: ChatService) {
         @PathVariable id: Long,
         @RequestBody request: AddMessageRequest
     ): Flux<String> =
-        chatService.streamLlm(id, request.content)
+        chatService.streamLlm(id, request.content, request.imageBase64, request.imageMimeType)
 }

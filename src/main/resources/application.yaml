@@ -59,6 +59,10 @@ spring:
         initialize-schema: true
         vector-size: 1024
 
+sherlock:
+  vision:
+    model: "${SHERLOCK_VISION_MODEL:PetrosStav/gemma3-tools:4b}"
+
 springdoc:
   api-docs:
     path: /api-docs

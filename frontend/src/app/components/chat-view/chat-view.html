@@ -7,6 +7,9 @@
       @for (msg of chat.messages; track msg.id) {
         <div class="message" [class]="'message-' + msg.role.toLowerCase()">
           <div class="message-role">{{ msg.role }}</div>
+          @if (msg.imageData) {
+            <img class="message-image" [src]="'data:' + msg.imageMimeType + ';base64,' + msg.imageData" alt="attached image" />
+          }
           <div class="message-content">{{ msg.content }}</div>
           <div class="message-time">{{ msg.createdAt | date:'short' }}</div>
         </div>
@@ -24,13 +27,29 @@
     </div>
   }
   <div class="input-area">
-    <input
-      type="text"
-      [(ngModel)]="newMessage"
-      (keyup.enter)="sendMessage()"
-      placeholder="Type a message..."
-      [disabled]="isStreaming"
-    />
-    <button (click)="sendMessage()" [disabled]="isStreaming">Send</button>
+    @if (selectedImagePreview) {
+      <div class="image-preview">
+        <img [src]="selectedImagePreview" alt="preview" />
+        <button class="remove-image" (click)="clearImage()" title="Remove image">✕</button>
+      </div>
+    }
+    <div class="input-row">
+      <input
+        #fileInput
+        type="file"
+        accept="image/png,image/jpeg,image/gif"
+        style="display:none"
+        (change)="onFileSelected($event)"
+      />
+      <button class="attach-btn" (click)="fileInput.click()" [disabled]="isStreaming" title="Attach image">📎</button>
+      <input
+        type="text"
+        [(ngModel)]="newMessage"
+        (keyup.enter)="sendMessage()"
+        placeholder="Type a message..."
+        [disabled]="isStreaming"
+      />
+      <button (click)="sendMessage()" [disabled]="isStreaming">Send</button>
+    </div>
   </div>
 </div>
